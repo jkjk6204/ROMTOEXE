@@ -1,0 +1,181 @@
+import os
+import subprocess
+import shutil
+import tkinter as tk
+from tkinter import filedialog, messagebox
+
+# Define emulator paths for various game formats
+EMULATOR_PATHS = {
+    ".z64": "Your path goes here",  # N64
+    ".nes": "Your path goes here",  # NES
+    ".smd": "Your path goes here",  # Sega Genesis
+    ".iso": "Your path goes here",  # PlayStation 2
+    ".gcm": "Your path goes here",  # GameCube
+    ".gba": "Your path goes here",  # Game Boy Advance
+    ".a26": "Your path goes here",  # Atari 2600
+    ".a52": "Your path goes here",  # Atari 5200
+    ".sms": "Your path goes here",  # Master System
+    ".7800": "Your path goes here",  # Atari 7800
+    ".pce": "Your path goes here",  # TurboGrafx-16
+    ".tgcd": "Your path goes here",  # TurboGrafx-CD
+    ".gen": "Your path goes here",  # Sega Genesis
+    ".cue": "Your path goes here",  # Sega CD
+    ".32x": "Your path goes here",  # Sega 32X
+    ".sat": "Your path goes here",  # Saturn
+    ".psx": "Your path goes here",  # PlayStation
+    ".dc": "Your path goes here",  # Dreamcast
+    ".ps2": "Your path goes here",  # PlayStation 2
+    ".wii": "Your path goes here",  # Wii
+    ".wiiware": "Your path goes here",  # WiiWare
+    ".gb": "Your path goes here",  # Game Boy
+    ".lnx": "Your path goes here",  # Lynx
+    ".gg": "Your path goes here",  # Game Gear
+    ".vb": "Your path goes here",  # Virtual Boy
+    ".gbc": "Your path goes here",  # Game Boy Color
+    ".nds": "Your path goes here",  # Nintendo DS
+    ".psp": "Your path goes here",  # PSP
+    ".rvz": "Your path goes here",  # RVZ (Dolphin)
+}
+# Output directories
+CONVERTED_GAMES_PATH = r"C:\Users\jacob\OneDrive\Desktop\Converted_Games"
+
+# Performance settings for all games
+performance_settings = {
+    "gfxBackend": "Vulkan",
+    "resolution": "3840x2160",  # Set to 4K resolution
+    "antiAliasing": "true",
+    "enableRayTracing": "true",
+    "enableHDR": "true",
+    "enableMotionBlur": "true",
+    "enableBloom": "true",
+    "enhancedTextures": "true",
+    "enableAmbientOcclusion": "true",
+    "enableDynamicLighting": "true",
+    "enableGlobalIllumination": "true",
+    "enableParticleEffects": "true",
+}
+
+# Function to check if paths exist and are valid
+def check_path_exists(path):
+    if not os.path.exists(path):
+        print(f"Error: {path} does not exist.")
+        return False
+    return True
+
+# Function to display messages to the user
+def show_message(title, message, is_error=False):
+    if is_error:
+        messagebox.showerror(title, message)
+    else:
+        messagebox.showinfo(title, message)
+
+# Function to sanitize ROM file names for valid use
+def sanitize_game_name(game_name):
+    return game_name.replace("'", "_").replace(" ", "_")
+
+# Function to apply performance settings (e.g., Vulkan, 4K resolution)
+def apply_performance_settings(rom_path):
+    print("Applying performance settings...")
+    for key, value in performance_settings.items():
+        print(f"{key}: {value}")
+    
+# Function to create the launcher script for ROM execution
+def create_launcher_script(rom_path, output_dir, emulator_path, emulator_args, sanitized_name):
+    python_script = os.path.join(output_dir, f"{sanitized_name}.py")
+    try:
+        with open(python_script, "w") as f:
+            f.write(f"""import subprocess
+subprocess.run([r"{emulator_path}", *{str(emulator_args)}], check=True)\n""")
+        print(f"Python launcher script created: {python_script}")
+        return python_script
+    except Exception as e:
+        show_message("Error", f"Failed to create launcher script: {e}", is_error=True)
+        return None
+
+# Function to detect the emulator based on ROM extension
+def detect_emulator(rom_path):
+    file_extension = os.path.splitext(rom_path)[1].lower()
+    emulator_path = EMULATOR_PATHS.get(file_extension)
+
+    if not emulator_path:
+        show_message("Error", "Unsupported ROM format.", is_error=True)
+        return None, []
+
+    return emulator_path, [rom_path]
+
+# Function to convert ROM to EXE
+def convert_rom_to_exe(rom_path):
+    rom_name = os.path.splitext(os.path.basename(rom_path))[0]
+    sanitized_name = sanitize_game_name(rom_name)
+    output_dir = os.path.join(CONVERTED_GAMES_PATH, sanitized_name)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Apply performance settings before conversion
+    apply_performance_settings(rom_path)
+
+    # Emulator detection
+    emulator_path, emulator_args = detect_emulator(rom_path)
+    
+    if not emulator_path:
+        return
+    
+    python_script = create_launcher_script(rom_path, output_dir, emulator_path, emulator_args, sanitized_name)
+    
+    if python_script:
+        game_cover_path = filedialog.askopenfilename(title="Select Game Cover Art", filetypes=[("Image Files", "*.jpg;*.jpeg;*.png;*.bmp")])
+        
+        if game_cover_path:
+            icon_path = game_cover_path  # Use the image as-is
+            try:
+                subprocess.run(["pyinstaller", "--onefile", "--noconsole", "--name", sanitized_name, "--icon", icon_path, python_script], check=True)
+                move_exe_to_output_dir(sanitized_name, output_dir)
+            except subprocess.CalledProcessError as e:
+                show_message("Error", f"Error during conversion: {e}", is_error=True)
+
+            cleanup_temp_files(sanitized_name)
+        else:
+            show_message("Error", "No cover art selected.", is_error=True)
+
+# Function to move the EXE after successful conversion
+def move_exe_to_output_dir(sanitized_name, output_dir):
+    exe_path = os.path.join("dist", f"{sanitized_name}.exe")
+    
+    # Ensure file isn't locked or in use
+    if os.path.exists(exe_path):
+        try:
+            if os.path.exists(os.path.join(output_dir, f"{sanitized_name}.exe")):
+                os.remove(os.path.join(output_dir, f"{sanitized_name}.exe"))
+            
+            shutil.move(exe_path, os.path.join(output_dir, f"{sanitized_name}.exe"))
+            show_message("Success", f"Conversion successful! EXE saved in: {os.path.join(output_dir, sanitized_name + '.exe')}")
+        except PermissionError as e:
+            show_message("Error", f"Permission error: {e}", is_error=True)
+        except FileExistsError:
+            show_message("Error", "File already exists and couldn't be overwritten.", is_error=True)
+        except Exception as e:
+            show_message("Error", f"Error moving EXE: {e}", is_error=True)
+
+# Function to cleanup PyInstaller temporary files
+def cleanup_temp_files(sanitized_name):
+    try:
+        for folder in ["build", "dist", "__pycache__"]:
+            shutil.rmtree(folder, ignore_errors=True)
+        spec_file = f"{sanitized_name}.spec"
+        if os.path.exists(spec_file):
+            os.remove(spec_file)
+    except Exception as e:
+        show_message("Error", f"Failed to clean up temporary files: {e}", is_error=True)
+
+# Function to select ROM from file dialog
+def select_rom():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    file_path = filedialog.askopenfilename(title="Select a ROM", filetypes=[("All ROMs", "*.z64;*.nes;*.smd;*.rvz;*.iso;*.gcm;*.gba;*.a26;*.a52;*.sms;*.7800;*.pce;*.tgcd;*.gen;*.cue;*.32x;*.sat;*.psx;*.dc;*.ps2;*.wii;*.wiiware;*.gb;*.lnx;*.gg;*.vb;*.gbc;*.nds;*.psp;*.ps3")])
+    
+    if file_path:
+        convert_rom_to_exe(file_path)
+    else:
+        print("No file selected.")
+
+if __name__ == "__main__":
+    select_rom()
